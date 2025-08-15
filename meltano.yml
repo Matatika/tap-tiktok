@@ -1,6 +1,9 @@
 version: 1
 send_anonymous_usage_stats: true
 project_id: 8670792d-8bdd-4858-acad-f130c0b5cfc8
+default_environment: dev
+environments:
+- name: dev
 plugins:
   extractors:
   - name: tap-tiktok
@@ -11,7 +14,7 @@ plugins:
     - catalog
     - discover
     settings:
-    - name: advertiser_id
+    - name: advertiser_ids
     - name: access_token
       kind: password
     - name: start_date

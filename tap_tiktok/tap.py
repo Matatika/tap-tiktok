@@ -17,13 +17,16 @@ from tap_tiktok.streams import (
     AdsAttributionMetricsByDayStream,
     AdsPageEventMetricsByDayStream,
     AdsInAppEventMetricsByDayStream,
+    AdsBasicDataMetricsByHourStream,
+    AdGroupBasicDataMetricsByHourStream,
     CampaignsAttributeMetricsStream,
     CampaignsBasicDataMetricsByDayStream,
     CampaignsVideoPlayMetricsByDayStream,
     CampaignsEngagementMetricsByDayStream,
     CampaignsAttributionMetricsByDayStream,
     CampaignsPageEventMetricsByDayStream,
-    CampaignsInAppEventMetricsByDayStream
+    CampaignsInAppEventMetricsByDayStream,
+    CampaignsBasicDataMetricsByHourStream,
 )
 STREAM_TYPES = [
     AdAccountsStream,
@@ -32,18 +35,21 @@ STREAM_TYPES = [
     AdsStream,
     AdsAttributeMetricsStream,
     AdsBasicDataMetricsByDayStream,
+    AdsBasicDataMetricsByHourStream,
     AdsVideoPlayMetricsByDayStream,
     AdsEngagementMetricsByDayStream,
     AdsAttributionMetricsByDayStream,
     AdsPageEventMetricsByDayStream,
     AdsInAppEventMetricsByDayStream,
+    AdGroupBasicDataMetricsByHourStream,
     CampaignsAttributeMetricsStream,
     CampaignsBasicDataMetricsByDayStream,
     CampaignsVideoPlayMetricsByDayStream,
     CampaignsEngagementMetricsByDayStream,
     CampaignsAttributionMetricsByDayStream,
     CampaignsPageEventMetricsByDayStream,
-    CampaignsInAppEventMetricsByDayStream
+    CampaignsInAppEventMetricsByDayStream,
+    CampaignsBasicDataMetricsByHourStream,
 ]
 
 
@@ -59,10 +65,10 @@ class TapTikTok(Tap):
             description="The token to authenticate against the API service"
         ),
         th.Property(
-            "advertiser_id",
-            th.StringType,
+            "advertiser_ids",
+            th.ArrayType(th.StringType),
             required=True,
-            description="Advertiser ID"
+            description="List of advertiser ids"
         ),
         th.Property(
             "start_date",

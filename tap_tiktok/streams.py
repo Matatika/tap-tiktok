@@ -56,7 +56,7 @@ class AdAccountsStream(TikTokStream):
     def get_url_params(
         self, context: Optional[dict], next_page_token: Optional[Any]
     ) -> Dict[str, Any]:
-        params: dict = {"advertiser_ids": "{advertiser_ids}".format(advertiser_ids=json.dumps([str(self.config["advertiser_id"])]))}
+        params: dict = {"advertiser_ids": json.dumps(self.config["advertiser_ids"])}
         if next_page_token:
             params["page"] = next_page_token
         return params
@@ -71,7 +71,7 @@ class CampaignsStream(TikTokStream):
     name = "campaigns"
     path = "/campaign/get/"
     primary_keys = ["campaign_id"]
-    replication_key = None
+    replication_key = "modify_time"
     schema = th.PropertiesList(
         th.Property("campaign_id", th.StringType),
         th.Property("campaign_name", th.StringType),
@@ -89,14 +89,28 @@ class CampaignsStream(TikTokStream):
         th.Property("split_test_variable", th.StringType),
         th.Property("budget", th.NumberType),
         th.Property("roas_bid", th.NumberType),
+        th.Property("budget_optimize_on", th.BooleanType),
+        th.Property("rta_id",th.StringType),
+        th.Property("secondary_status", th.StringType),
     ).to_dict()
+    schema["additionalProperties"] = True
 
+    @property
+    def partitions(self):
+        return [{"advertiser_id": adv_id} for adv_id in self.config["advertiser_ids"]]
+
+    def get_url_params(self, context, next_page_token):
+        params = super().get_url_params(context, next_page_token)
+        params["advertiser_id"] = context["advertiser_id"]
+        return params
 
 class AdGroupsStream(TikTokStream):
     name = "ad_groups"
     path = "/adgroup/get/"
     primary_keys = ["adgroup_id"]
-    replication_key = None
+    replication_key = "modify_time"
+    state_partitioning_keys = ["advertiser_id"]
+
     schema = th.PropertiesList(
         th.Property("adgroup_id", th.StringType),
         th.Property("age", th.ArrayType(th.StringType)),
@@ -129,7 +143,7 @@ class AdGroupsStream(TikTokStream):
         th.Property("category", th.IntegerType),
         th.Property("pixel_id", th.StringType),
         th.Property("frequency_schedule", th.IntegerType),
-        th.Property("keywords", th.ArrayType(th.NumberType)),
+        th.Property("keywords", th.ArrayType(th.StringType)),
         th.Property("enable_search_result", th.BooleanType),
         th.Property("bid", th.NumberType),
         th.Property("app_type", th.StringType),
@@ -183,14 +197,26 @@ class AdGroupsStream(TikTokStream):
         th.Property("schedule_type", th.StringType),
         th.Property("interest_category_v2", th.ArrayType(th.IntegerType)),
         th.Property("connection_type", th.ArrayType(th.StringType)),
+        th.Property("audience_type", th.StringType),
+        th.Property("interest_category_ids", th.ArrayType(th.StringType)),
     ).to_dict()
+
+    @property
+    def partitions(self):
+        return [{"advertiser_id": adv_id} for adv_id in self.config["advertiser_ids"]]
+
+    def get_url_params(self, context, next_page_token):
+        params = super().get_url_params(context, next_page_token)
+        params["advertiser_id"] = context["advertiser_id"]
+        params["creation_filter_start_time"] = self.get_starting_replication_key_value(context)
+        return params
 
 
 class AdsStream(TikTokStream):
     name = "ads"
     path = "/ad/get/"
     primary_keys = ["ad_id"]
-    replication_key = None
+    replication_key = "modify_time"
     schema = th.PropertiesList(
         th.Property("ad_id", th.StringType),
         th.Property("ad_format", th.StringType),
@@ -234,7 +260,19 @@ class AdsStream(TikTokStream):
         th.Property("create_time", th.DateTimeType),
         th.Property("card_id", th.StringType),
         th.Property("fallback_type", th.StringType),
+        th.Property("age_groups", th.ArrayType(th.StringType)),
     ).to_dict()
+    schema["additionalProperties"] = True
+
+    @property
+    def partitions(self):
+        return [{"advertiser_id": adv_id} for adv_id in self.config["advertiser_ids"]]
+
+    def get_url_params(self, context, next_page_token):
+        params = super().get_url_params(context, next_page_token)
+        params["advertiser_id"] = context["advertiser_id"]
+        params["creation_filter_start_time"] = self.get_starting_replication_key_value(context)
+        return params
 
 
 DATE_FORMAT = "%Y-%m-%d"
@@ -243,10 +281,15 @@ STEP_NUM_DAYS = 30
 
 class AdsMetricsByDayStream(TikTokReportsStream):
     tiktok_metrics = []
-    data_level = "AUCTION_AD"
     dimensions = ["ad_id", "stat_time_day"]
 
     status_field = "ad_status"
+    service_type = "AUCTION"
+    report_type = "BASIC"
+
+    @property
+    def partitions(self):
+        return [{"advertiser_id": adv_id} for adv_id in self.config["advertiser_ids"]]
 
     def get_url_params(
         self, context: Optional[dict], next_page_token: Optional[Any]
@@ -270,11 +313,10 @@ class AdsMetricsByDayStream(TikTokReportsStream):
         yesterday = datetime.datetime.now(tz=start_date.tzinfo) - datetime.timedelta(days=1)
         end_date = min(start_date + datetime.timedelta(days=STEP_NUM_DAYS), yesterday)
         params: dict = {
-            "page_size": 10,
-            "advertiser_id": self.config.get("advertiser_id"),
-            "service_type": "AUCTION",
-            "report_type": "BASIC",
-            "data_level": self.data_level,
+            "page_size": 1000,
+            "advertiser_id": context["advertiser_id"],
+            "service_type": self.service_type,
+            "report_type": self.report_type,
             "dimensions": json.dumps(self.dimensions),
             "metrics": json.dumps(self.tiktok_metrics),
             "start_date": start_date.strftime(DATE_FORMAT),
@@ -287,6 +329,91 @@ class AdsMetricsByDayStream(TikTokReportsStream):
                 }
             ])
         }
+        if self.data_level:
+            params["data_level"] = self.data_level
+        if next_page_token:
+            params["page"] = next_page_token["page"]
+        
+        return params
+
+    @staticmethod
+    def _get_page_info(json_path, json):
+        page_matches = extract_jsonpath(json_path, json)
+        return next(iter(page_matches), None)
+
+    def get_next_page_token(
+        self, response: requests.Response, previous_token: Optional[Any]
+    ) -> Optional[Any]:
+        """Return a token for identifying next page or None if no more pages."""
+        current_page = self._get_page_info("$.data.page_info.page", response.json()) or 0
+        total_pages = self._get_page_info("$.data.page_info.total_page", response.json()) or 0
+        start_date = datetime.datetime.strptime(parse_qs(urlparse(response.request.url).query)['start_date'][0],DATE_FORMAT)
+        yesterday = datetime.datetime.now(tz=start_date.tzinfo) - datetime.timedelta(days=1)
+        end_date = datetime.datetime.strptime(parse_qs(urlparse(response.request.url).query)['end_date'][0], DATE_FORMAT)
+        if current_page < total_pages:
+            return {
+                "page": current_page + 1,
+                "start_date": previous_token["start_date"] if previous_token else None
+            }
+        elif end_date.date() < yesterday.date():
+            return {
+                "page": 1,
+                "start_date": min(end_date + datetime.timedelta(days=1), yesterday).strftime(DATE_FORMAT)
+            }
+        return None
+    
+class AdsMetricsByHourStream(TikTokReportsStream):
+    tiktok_metrics = []
+    dimensions = ["ad_id", "stat_time_hour"]
+
+    status_field = "ad_status"
+    service_type = "AUCTION"
+    report_type = "BASIC"
+
+    @property
+    def partitions(self):
+        return [{"advertiser_id": adv_id} for adv_id in self.config["advertiser_ids"]]
+
+    def get_url_params(
+        self, context: Optional[dict], next_page_token: Optional[Any]
+    ) -> Dict[str, Any]:
+        """Return a dictionary of values to be used in URL parameterization."""
+        if isinstance(next_page_token, dict) and next_page_token["start_date"] is not None:
+            start_date = datetime.datetime.strptime(next_page_token["start_date"], DATE_FORMAT)
+        else:
+            start_date = self.get_starting_timestamp(context)
+
+            # picking up where we left off on the last run (or first run), adjust for lookback if set
+            lookback_window = self.config["lookback"]
+            if lookback_window > 0:
+                # if lookback is configured, we want to refetch data for the entire lookback window
+                # (or as far back as the configured start date, whichever is the most recent date)
+                start_date = max(
+                    min(start_date, datetime.datetime.now(tz=start_date.tzinfo) - datetime.timedelta(days=lookback_window)),
+                    dateutil.parser.isoparse(self.config["start_date"]),
+                )
+
+        #yesterday = datetime.datetime.now(tz=start_date.tzinfo) - datetime.timedelta(days=1)
+        end_date = start_date
+        params: dict = {
+            "page_size": 1000,
+            "advertiser_id": context["advertiser_id"],
+            "service_type": self.service_type,
+            "report_type": self.report_type,
+            "dimensions": json.dumps(self.dimensions),
+            "metrics": json.dumps(self.tiktok_metrics),
+            "start_date": start_date.strftime(DATE_FORMAT),
+            "end_date": end_date.strftime(DATE_FORMAT),
+            "filtering": json.dumps([
+                {
+                    'field_name': self.status_field,
+                    'filter_type': 'IN',
+                    'filter_value': json.dumps(["STATUS_ALL" if self.config.get("include_deleted") else "STATUS_NOT_DELETE"]),
+                }
+            ])
+        }
+        if self.data_level:
+            params["data_level"] = self.data_level
         if next_page_token:
             params["page"] = next_page_token["page"]
         
@@ -324,11 +451,19 @@ class CampaignMetricsByDayStream(AdsMetricsByDayStream):
     dimensions = ["campaign_id", "stat_time_day"]
     status_field = "campaign_status"
 
+class CampaignMetricsByHourStream(AdsMetricsByHourStream):
+    data_level = "AUCTION_CAMPAIGN"
+    dimensions = ["campaign_id", "stat_time_hour"]
+    status_field = "campaign_status"
+
+class AdGroupMetricsByHourStream(AdsMetricsByHourStream):
+    data_level = "AUCTION_ADGROUP"
+    dimensions = ["adgroup_id", "stat_time_hour"]
+
 ATTRIBUTE_METRICS = [
     "campaign_name", "objective_type", "campaign_id", "adgroup_name", "placement", "adgroup_id", "ad_name", "ad_text",
     "tt_app_id", "tt_app_name", "mobile_app_id", "promotion_type", "dpa_target_audience_type"
 ]
-
 
 class AdsAttributeMetricsStream(AdsMetricsByDayStream):
     name = "ads_attribute_metrics"
@@ -418,7 +553,8 @@ BASIC_DATA_METRICS = [
     "conversion", "cost_per_conversion", "conversion_rate", "real_time_conversion", "real_time_cost_per_conversion",
     "real_time_conversion_rate", "result", "cost_per_result", "result_rate", "real_time_result", "real_time_cost_per_result",
     "real_time_result_rate", "secondary_goal_result", "cost_per_secondary_goal_result", "secondary_goal_result_rate",
-    "frequency"
+    "frequency","video_watched_2s", "video_watched_6s", "video_views_p25", "video_views_p50","video_views_p100","average_video_play","video_play_actions",
+    "likes","profile_visits","follows","comments","shares","average_video_play_per_user","total_sales_lead_value","total_purchase_value"
 ]
 
 
@@ -428,9 +564,25 @@ class AdsBasicDataMetricsByDayStream(AdsMetricsByDayStream):
     path = "/"
     primary_keys = ["ad_id", "stat_time_day"]
     replication_key = "stat_time_day"
+    data_level = "AUCTION_AD"
     properties = [
         th.Property("ad_id", th.StringType),
         th.Property("stat_time_day", th.DateTimeType),
+    ]
+    properties += [th.Property(metric, th.StringType) for metric in BASIC_DATA_METRICS]
+    schema = th.PropertiesList(*properties).to_dict()
+
+class AdsBasicDataMetricsByHourStream(AdsMetricsByHourStream):
+    name = "ads_basic_data_metrics_by_hour"
+    tiktok_metrics = BASIC_DATA_METRICS
+    path = "/"
+    primary_keys = ["ad_id", "stat_time_hour"]
+    replication_key = "stat_time_hour"
+    data_level = "AUCTION_AD"
+    step_num_days = 1
+    properties = [
+        th.Property("ad_id", th.StringType),
+        th.Property("stat_time_hour", th.DateTimeType),
     ]
     properties += [th.Property(metric, th.StringType) for metric in BASIC_DATA_METRICS]
     schema = th.PropertiesList(*properties).to_dict()
@@ -446,6 +598,34 @@ class CampaignsBasicDataMetricsByDayStream(CampaignMetricsByDayStream):
     properties = [
         th.Property("campaign_id", th.StringType),
         th.Property("stat_time_day", th.DateTimeType),
+    ]
+    properties += [th.Property(metric, th.StringType) for metric in BASIC_DATA_METRICS]
+    schema = th.PropertiesList(*properties).to_dict()
+
+class CampaignsBasicDataMetricsByHourStream(CampaignMetricsByHourStream):
+    name = "campaigns_basic_data_metrics_by_hour"
+    status_field = "campaign_status"
+    tiktok_metrics = BASIC_DATA_METRICS
+    path = "/"
+    primary_keys = ["campaign_id", "stat_time_hour"]
+    replication_key = "stat_time_hour"
+    properties = [
+        th.Property("campaign_id", th.StringType),
+        th.Property("stat_time_hour", th.DateTimeType),
+    ]
+    properties += [th.Property(metric, th.StringType) for metric in BASIC_DATA_METRICS]
+    schema = th.PropertiesList(*properties).to_dict()
+
+class AdGroupBasicDataMetricsByHourStream(AdGroupMetricsByHourStream):
+    name = "ad_group_basic_data_metrics_by_hour"
+    status_field = "adgroup_status"
+    tiktok_metrics = BASIC_DATA_METRICS
+    path = "/"
+    primary_keys = ["adgroup_id", "stat_time_hour"]
+    replication_key = "stat_time_hour"
+    properties = [
+        th.Property("adgroup_id", th.StringType),
+        th.Property("stat_time_hour", th.DateTimeType),
     ]
     properties += [th.Property(metric, th.StringType) for metric in BASIC_DATA_METRICS]
     schema = th.PropertiesList(*properties).to_dict()

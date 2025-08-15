@@ -15,7 +15,6 @@ class TikTokStream(RESTStream):
     url_base = "https://business-api.tiktok.com/open_api/v1.3"
 
     records_jsonpath = "$.data.list[*]"
-
     @property
     def http_headers(self) -> dict:
         """Return the http headers needed."""
@@ -45,11 +44,15 @@ class TikTokStream(RESTStream):
         self, context: Optional[dict], next_page_token: Optional[Any]
     ) -> Dict[str, Any]:
         """Return a dictionary of values to be used in URL parameterization."""
-        params: dict = {"advertiser_id": self.config["advertiser_id"]}
+        advertiser_id = context.get("advertiser_id") if context else None
+        if not advertiser_id:
+            raise ValueError("Missing advertiser_id in context.")
+        
+        params: dict = {"advertiser_id": advertiser_id}
         if next_page_token:
             params["page"] = next_page_token
         params["filtering"] = json.dumps({"primary_status": "STATUS_ALL" if self.config.get("include_deleted") else "STATUS_NOT_DELETE"})
-        params["page_size"] = 10
+        params["page_size"] = 1000
         return params
 
 
