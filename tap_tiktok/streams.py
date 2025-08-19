@@ -107,7 +107,7 @@ class CampaignsStream(TikTokStream):
 class AdGroupsStream(TikTokStream):
     name = "ad_groups"
     path = "/adgroup/get/"
-    primary_keys = ["adgroup_id"]
+    primary_keys = ["adgroup_id","modify_time"]
     replication_key = "modify_time"
     state_partitioning_keys = ["advertiser_id","modify_time"]
 
