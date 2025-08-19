@@ -70,7 +70,7 @@ class AdAccountsStream(TikTokStream):
 class CampaignsStream(TikTokStream):
     name = "campaigns"
     path = "/campaign/get/"
-    primary_keys = ["campaign_id"]
+    primary_keys = ["campaign_id","modify_time"]
     replication_key = "modify_time"
     schema = th.PropertiesList(
         th.Property("campaign_id", th.StringType),
@@ -109,7 +109,7 @@ class AdGroupsStream(TikTokStream):
     path = "/adgroup/get/"
     primary_keys = ["adgroup_id"]
     replication_key = "modify_time"
-    state_partitioning_keys = ["advertiser_id"]
+    state_partitioning_keys = ["advertiser_id","modify_time"]
 
     schema = th.PropertiesList(
         th.Property("adgroup_id", th.StringType),
@@ -215,7 +215,7 @@ class AdGroupsStream(TikTokStream):
 class AdsStream(TikTokStream):
     name = "ads"
     path = "/ad/get/"
-    primary_keys = ["ad_id"]
+    primary_keys = ["ad_id","modify_time"]
     replication_key = "modify_time"
     schema = th.PropertiesList(
         th.Property("ad_id", th.StringType),
