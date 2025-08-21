@@ -102,6 +102,7 @@ class CampaignsStream(TikTokStream):
     def get_url_params(self, context, next_page_token):
         params = super().get_url_params(context, next_page_token)
         params["advertiser_id"] = context["advertiser_id"]
+        params["creation_filter_start_time"] = self.get_starting_replication_key_value(context)
         return params
 
 class AdGroupsStream(TikTokStream):
