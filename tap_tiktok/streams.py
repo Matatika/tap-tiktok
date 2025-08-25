@@ -287,6 +287,7 @@ class AdsMetricsByDayStream(TikTokReportsStream):
     status_field = "ad_status"
     service_type = "AUCTION"
     report_type = "BASIC"
+    data_level = "AUCTION_AD"
 
     @property
     def partitions(self):
@@ -413,6 +414,7 @@ class AdsMetricsByHourStream(TikTokReportsStream):
                 }
             ])
         }
+        self._last_start_date = end_date
         if self.data_level:
             params["data_level"] = self.data_level
         if next_page_token:
@@ -445,6 +447,35 @@ class AdsMetricsByHourStream(TikTokReportsStream):
                 "start_date": min(end_date + datetime.timedelta(days=1), yesterday).strftime(DATE_FORMAT)
             }
         return None
+    
+    def get_records(self, context):
+        yielded = False
+        for record in super().get_records(context):
+            yielded = True
+            yield record
+
+        if not yielded and hasattr(self, "_last_start_date") and self._last_start_date:
+        # Get the mutable state dict
+            state = self.tap_state
+            stream_state = state.setdefault("bookmarks", {}).setdefault(self.name, {})
+            partitions = stream_state.setdefault("partitions", [])
+
+        # Look for existing partition for this advertiser_id
+            for partition in partitions:
+                if partition.get("context") == context:
+                    partition["replication_key"] = self.replication_key
+                    partition["replication_key_value"] = self._last_start_date.isoformat()
+                    break
+            else:
+            # Not found → append new partition
+                partitions.append({
+                    "context": context,
+                    "replication_key": self.replication_key,
+                    "replication_key_value": self._last_start_date.isoformat(),
+                })
+
+            # Emit updated state
+            self._write_state_message()
 
 
 class CampaignMetricsByDayStream(AdsMetricsByDayStream):
