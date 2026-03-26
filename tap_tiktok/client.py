@@ -22,7 +22,7 @@ class TikTokStream(RESTStream):
         if "user_agent" in self.config:
             headers["User-Agent"] = self.config.get("user_agent")
         headers["Content-Type"] = "application/json"
-        headers["Access-Token"] = self.config["access_token"].__str__()
+        headers["Access-Token"] = self.tap.get_access_token()
         return headers
 
     @staticmethod

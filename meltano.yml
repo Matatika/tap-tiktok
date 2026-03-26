@@ -17,6 +17,16 @@ plugins:
     - name: advertiser_ids
     - name: access_token
       kind: password
+    - name: client_key
+    - name: client_secret
+      kind: password
+    - name: auth_code
+      kind: password
+    - name: refresh_token
+      kind: password
+    - name: redirect_uri
+    - name: oauth_access_token_url
+      value: https://open.tiktokapis.com/v2/oauth/token/
     - name: start_date
       value: '2022-01-01T00:00:00Z'
     config:
