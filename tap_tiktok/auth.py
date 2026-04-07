@@ -101,7 +101,8 @@ class ProxyTikTokAuthenticator(TikTokAuthenticator, metaclass=SingletonMeta):
     @property
     def oauth_request_headers(self) -> dict:
         """Return headers for proxy refresh requests."""
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        # Default proxy refresh requests to JSON (matches common proxy behavior).
+        headers = {"Content-Type": "application/json"}
         if self._proxy_auth:
             headers["Authorization"] = self._proxy_auth
         return headers

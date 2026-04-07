@@ -28,7 +28,7 @@ class TikTokStream(RESTStream):
         client_id = oauth_credentials.get("client_id") or self.config.get("client_key")
         client_secret = oauth_credentials.get("client_secret") or self.config.get("client_secret")
         refresh_token = oauth_credentials.get("refresh_token") or self.config.get("refresh_token")
-        refresh_proxy_url = oauth_credentials.get("refresh_proxy_url")
+        refresh_proxy_url = oauth_credentials.get("refresh_proxy_url") or self.config.get("refresh_proxy_url")
         token_url = (
             oauth_credentials.get("token_url")
             or self.config.get("oauth_access_token_url")
@@ -48,7 +48,7 @@ class TikTokStream(RESTStream):
             return ProxyTikTokAuthenticator(
                 stream=self,
                 refresh_token=refresh_token,
-                proxy_auth=oauth_credentials.get("refresh_proxy_url_auth"),
+                proxy_auth=oauth_credentials.get("refresh_proxy_url_auth") or self.config.get("refresh_proxy_url_auth"),
                 auth_endpoint=refresh_proxy_url,
             )
 
