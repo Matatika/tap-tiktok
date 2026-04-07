@@ -48,20 +48,37 @@ class TikTokAuthenticator(OAuthAuthenticator, metaclass=SingletonMeta):
     def update_access_token(self) -> None:
         """Refresh the OAuth access token."""
         request_time = utc_now()
-        token_response = requests.post(
-            self.auth_endpoint,
-            data=self.oauth_request_body,
-            headers=self.oauth_request_headers,
-        )
+        headers = self.oauth_request_headers or {}
+        body = self.oauth_request_body
+
+        # Choose json= vs data= based on Content-Type header
+        content_type = headers.get("Content-Type", "")
+        if content_type.startswith("application/json"):
+            token_response = requests.post(self.auth_endpoint, json=body, headers=headers)
+        else:
+            token_response = requests.post(self.auth_endpoint, data=body, headers=headers)
+
         try:
             token_response.raise_for_status()
             self.logger.info("OAuth authorization attempt was successful.")
         except Exception as ex:
+            # Try to surface raw response text to aid debugging (may not be JSON)
+            resp_text = None
+            try:
+                resp_text = token_response.text
+            except Exception:
+                resp_text = "<unable to read response body>"
             raise RuntimeError(
-                f"Failed OAuth login, response was '{token_response.json()}'. {ex}"
+                f"Failed OAuth login (status={token_response.status_code}), response was: {resp_text}. {ex}"
             )
 
-        token_json = token_response.json()
+        # Parse JSON response, failing with a clear message if not JSON
+        try:
+            token_json = token_response.json()
+        except Exception as ex:
+            raise RuntimeError(
+                f"OAuth refresh response is not valid JSON: {token_response.text}. {ex}"
+            )
         if "access_token" not in token_json:
             raise RuntimeError(
                 "OAuth refresh response did not include 'access_token'. "
