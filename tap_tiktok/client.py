@@ -1,11 +1,15 @@
 """REST client handling, including TikTokStream base class."""
 
+from functools import cached_property
 import json
 import requests
 from typing import Any, Dict, Optional
 
+from singer_sdk.authenticators import APIKeyAuthenticator
 from singer_sdk.helpers.jsonpath import extract_jsonpath
 from singer_sdk.streams import RESTStream
+
+from tap_tiktok.auth import ProxyTikTokAuthenticator, TikTokAuthenticator
 
 DATE_FORMAT = "%Y-%m-%d"
 
@@ -15,6 +19,55 @@ class TikTokStream(RESTStream):
     url_base = "https://business-api.tiktok.com/open_api/v1.3"
 
     records_jsonpath = "$.data.list[*]"
+
+    @cached_property
+    def authenticator(self):
+        """Return the authenticator for TikTok API requests."""
+        oauth_credentials = self.config.get("oauth_credentials") or {}
+
+        client_id = oauth_credentials.get("client_id") or self.config.get("client_key")
+        client_secret = oauth_credentials.get("client_secret") or self.config.get("client_secret")
+        refresh_token = oauth_credentials.get("refresh_token") or self.config.get("refresh_token")
+        refresh_proxy_url = oauth_credentials.get("refresh_proxy_url")
+        token_url = (
+            oauth_credentials.get("token_url")
+            or self.config.get("oauth_access_token_url")
+            or "https://open.tiktokapis.com/v2/oauth/token/"
+        )
+
+        if client_id and client_secret and refresh_token:
+            return TikTokAuthenticator(
+                stream=self,
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=refresh_token,
+                auth_endpoint=token_url,
+            )
+
+        if refresh_proxy_url and refresh_token:
+            return ProxyTikTokAuthenticator(
+                stream=self,
+                refresh_token=refresh_token,
+                proxy_auth=oauth_credentials.get("refresh_proxy_url_auth"),
+                auth_endpoint=refresh_proxy_url,
+            )
+
+        access_token = oauth_credentials.get("access_token") or self.config.get("access_token")
+        if access_token:
+            return APIKeyAuthenticator.create_for_stream(
+                self,
+                key="Access-Token",
+                value=access_token,
+                location="header",
+            )
+
+        raise ValueError(
+            "Insufficient config to establish an authenticator. "
+            "Provide `access_token`, `oauth_credentials.access_token`, "
+            "`oauth_credentials.client_id` + `oauth_credentials.client_secret` + `oauth_credentials.refresh_token`, "
+            "or `oauth_credentials.refresh_proxy_url` + `oauth_credentials.refresh_token`."
+        )
+
     @property
     def http_headers(self) -> dict:
         """Return the http headers needed."""
@@ -22,7 +75,6 @@ class TikTokStream(RESTStream):
         if "user_agent" in self.config:
             headers["User-Agent"] = self.config.get("user_agent")
         headers["Content-Type"] = "application/json"
-        headers["Access-Token"] = self.tap.get_access_token()
         return headers
 
     @staticmethod

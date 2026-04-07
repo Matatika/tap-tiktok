@@ -14,7 +14,13 @@ pipx install git+https://github.com/gthsheep/tap-tiktok
 
 ### Accepted Config Options
 
-`access_token` - Access Token for the API as obtained via the authentication process described below.  
+`access_token` - Static access token for the API. If you use OAuth settings below, this can be omitted.  
+`client_key` - TikTok OAuth client key.  
+`client_secret` - TikTok OAuth client secret.  
+`auth_code` - One-time OAuth authorization code for the initial token exchange.  
+`refresh_token` - OAuth refresh token for subsequent runs.  
+`redirect_uri` - Redirect URI registered in your TikTok app. Required with `auth_code`.  
+`oauth_access_token_url` - Token endpoint, defaulting to `https://open.tiktokapis.com/v2/oauth/token/`.  
 `advertiser_id` - Advertiser ID for your TikTok account.  
 `start_date` - Start date as of when to start collecting metrics, e.g. `2022-01-01T00:00:00Z`  
 `lookback` - Number of days prior to the current date for which data should be refetched (default `0`)
@@ -28,9 +34,19 @@ tap-tiktok --about
 
 ### Source Authentication and Authorization
 
-To obtain an `access_token` you should follow the App creation steps described in the TikTok documentation,
-[here](https://ads.tiktok.com/marketing_api/docs?id=1701890912382977), then the Authentication documentation, 
-[here](https://ads.tiktok.com/marketing_api/docs?id=1701890914536450).  
+To obtain an `access_token` you can either paste a static token into `access_token`, or configure OAuth and let the tap exchange or refresh tokens at runtime.
+The tap supports:
+
+1. `auth_code` + `client_key` + `client_secret` + `redirect_uri` for the initial OAuth token exchange.
+2. `refresh_token` + `client_key` + `client_secret` for later refreshes.
+
+The default token endpoint is TikTok OAuth v2 at `https://open.tiktokapis.com/v2/oauth/token/`, which expects
+`application/x-www-form-urlencoded` requests for both `authorization_code` and `refresh_token` grants. After the first
+successful exchange, you should persist the returned `refresh_token` in your Meltano secrets or environment so future
+runs can refresh without reusing the one-time `auth_code`.
+
+TikTok app creation and scope setup still need to follow TikTok's developer and business documentation for the
+permissions your streams require.  
 As for scopes for your App, metrics streams are fed by the Reporting permission set, then data for Campaign, Ad Group,
 and Ads require their respective read permissions.  
 

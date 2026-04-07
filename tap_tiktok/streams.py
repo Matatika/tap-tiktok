@@ -67,6 +67,104 @@ class AdAccountsStream(TikTokStream):
         return None
 
 
+class UserInfoStream(TikTokStream):
+
+    name = "user_info"
+    # Use the Open TikTok API host for user endpoints
+    url_base = "https://open.tiktokapis.com/v2"
+    path = "/user/info/"
+    primary_keys = ["open_id"]
+    # The API returns the user object under `data.user`.
+    records_jsonpath = "$.data.user"
+
+    # Default fields to request from the user info endpoint. Can be overridden
+    # in config with `user_info_fields` as a list of strings.
+    DEFAULT_FIELDS = [
+        "open_id",
+        "union_id",
+        "nickname",
+        "display_name",
+        "unique_id",
+        "avatar_url",
+        "avatar_large",
+        "bio",
+        "country",
+        "language",
+        "follower_count",
+        "following_count",
+        "total_favorited",
+        "is_verified",
+    ]
+
+    schema = th.PropertiesList(
+        th.Property("open_id", th.StringType),
+        th.Property("union_id", th.StringType),
+        th.Property("nickname", th.StringType),
+        th.Property("display_name", th.StringType),
+        th.Property("unique_id", th.StringType),
+        th.Property("avatar_url", th.StringType),
+        th.Property("avatar_large", th.StringType),
+        th.Property("bio", th.StringType),
+        th.Property("country", th.StringType),
+        th.Property("language", th.StringType),
+        th.Property("follower_count", th.IntegerType),
+        th.Property("following_count", th.IntegerType),
+        th.Property("total_favorited", th.IntegerType),
+        th.Property("is_verified", th.BooleanType),
+    ).to_dict()
+
+    def get_next_page_token(self, response: requests.Response, previous_token: Optional[Any]) -> Optional[Any]:
+        return None
+
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
+        """Normalize nested user node results into a flat record matching the schema.
+
+        Some responses may nest fields under `user` already; ensure we return
+        a flat dict of the user properties.
+        """
+        if not isinstance(row, dict):
+            return row
+
+        # If API returned a top-level `user` key (unexpected due to records_jsonpath),
+        # prefer that inner dict.
+        if "user" in row and isinstance(row["user"], dict):
+            return row["user"]
+
+        return row
+
+    def get_url_params(self, context: Optional[dict], next_page_token: Optional[Any]) -> Dict[str, Any]:
+        """User info endpoint does not require advertiser context or paging."""
+        # allow overriding requested fields via config
+        cfg_fields = self.config.get("user_info_fields")
+        if isinstance(cfg_fields, (list, tuple)) and cfg_fields:
+            fields = cfg_fields
+        else:
+            fields = self.DEFAULT_FIELDS
+
+        return {"fields": ",".join(fields)}
+
+    @property
+    def http_headers(self) -> dict:
+        """Return headers for the user info request, adding Authorization if available."""
+        headers = super().http_headers.copy()
+        token = None
+        # Prefer the authenticator's access token (it will refresh if needed)
+        try:
+            auth = getattr(self, "authenticator", None)
+            token = getattr(auth, "access_token", None) if auth is not None else None
+        except Exception:
+            token = None
+
+        # Fallback to any static access_token in config
+        if not token:
+            oauth_credentials = self.config.get("oauth_credentials") or {}
+            token = oauth_credentials.get("access_token") or self.config.get("access_token")
+
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+
 class CampaignsStream(TikTokStream):
     name = "campaigns"
     path = "/campaign/get/"

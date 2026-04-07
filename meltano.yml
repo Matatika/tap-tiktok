@@ -25,10 +25,16 @@ plugins:
     - name: refresh_token
       kind: password
     - name: redirect_uri
+    - name: authorization_url
+    - name: scope
     - name: oauth_access_token_url
       value: https://open.tiktokapis.com/v2/oauth/token/
     - name: start_date
       value: '2022-01-01T00:00:00Z'
+    - name: include_deleted
+      value: true
+    - name: lookback
+      value: 0
     config:
       start_date: '2022-01-01T00:00:00Z'
   loaders:
