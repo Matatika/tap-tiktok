@@ -90,22 +90,24 @@ class TapTikTok(Tap):
         ),
         th.Property(
             "custom_basic_report",
-            th.ObjectType(
-                th.Property("name", th.StringType),
-                th.Property("service_type", th.StringType),
-                th.Property("report_type", th.StringType),
-                th.Property("data_level", th.StringType),
-                th.Property("dimensions", th.ArrayType(th.StringType), required=True),
-                th.Property("metrics", th.ArrayType(th.StringType), required=True),
-                th.Property("primary_keys", th.ArrayType(th.StringType)),
-                th.Property("replication_key", th.StringType),
-                th.Property("status_field", th.StringType),
-                th.Property("include_status_filter", th.BooleanType),
-                th.Property("step_num_days", th.IntegerType),
-                th.Property("page_size", th.IntegerType),
-                th.Property("filtering", th.ArrayType(th.ObjectType())),
+            th.ArrayType(
+                th.ObjectType(
+                    th.Property("name", th.StringType),
+                    th.Property("service_type", th.StringType),
+                    th.Property("report_type", th.StringType),
+                    th.Property("data_level", th.StringType),
+                    th.Property("dimensions", th.ArrayType(th.StringType), required=True),
+                    th.Property("metrics", th.ArrayType(th.StringType), required=True),
+                    th.Property("primary_keys", th.ArrayType(th.StringType)),
+                    th.Property("replication_key", th.StringType),
+                    th.Property("status_field", th.StringType),
+                    th.Property("include_status_filter", th.BooleanType),
+                    th.Property("step_num_days", th.IntegerType),
+                    th.Property("page_size", th.IntegerType),
+                    th.Property("filtering", th.ArrayType(th.ObjectType())),
+                )
             ),
-            description="Single TikTok basic report definition for /report/integrated/get/."
+            description="List of TikTok basic report definitions for /report/integrated/get/."
         )
     ).to_dict()
 
@@ -113,7 +115,7 @@ class TapTikTok(Tap):
         """Return a list of discovered streams."""
         streams = [stream_class(tap=self) for stream_class in STREAM_TYPES]
 
-        if self.config.get("custom_basic_report"):
-            streams.append(CustomBasicReportStream(tap=self, report_config=self.config["custom_basic_report"]))
+        for report_config in self.config.get("custom_basic_report", []):
+            streams.append(CustomBasicReportStream(tap=self, report_config=report_config))
 
         return streams
