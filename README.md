@@ -4,6 +4,18 @@
 
 Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
+## Current Status
+
+This tap currently supports the core TikTok entity streams plus report streams, and
+it also supports config-driven custom basic reports through `custom_basic_report`.
+
+At the moment:
+
+- `custom_basic_report` is a list of report definitions, not a single object.
+- Each custom basic report becomes its own Singer stream.
+- Custom basic reports run in 1-day request windows.
+- `custom_reports` is not supported.
+
 ## Installation
 
 ```bash
@@ -14,10 +26,45 @@ pipx install git+https://github.com/gthsheep/tap-tiktok
 
 ### Accepted Config Options
 
-`access_token` - Access Token for the API as obtained via the authentication process described below.  
-`advertiser_id` - Advertiser ID for your TikTok account.  
-`start_date` - Start date as of when to start collecting metrics, e.g. `2022-01-01T00:00:00Z`  
-`lookback` - Number of days prior to the current date for which data should be refetched (default `0`)
+- `access_token` - Access Token for the API as obtained via the authentication process described below.
+- `advertiser_ids` - Advertiser IDs for your TikTok accounts.
+- `start_date` - Start date as of when to start collecting metrics, e.g. `2022-01-01T00:00:00Z`.
+- `lookback` - Number of days prior to the current date for which data should be refetched (default `0`).
+- `include_deleted` - Include deleted-status entities when supported by the endpoint.
+- `custom_basic_report` - A list of TikTok Basic Report definitions to expose as streams.
+
+Example custom Basic Report config:
+
+```json
+{
+  "access_token": "...",
+  "advertiser_ids": ["1234567890"],
+  "start_date": "2026-01-01T00:00:00Z",
+  "custom_basic_report": [
+    {
+      "name": "campaign_country_spend_by_day",
+      "service_type": "AUCTION",
+      "report_type": "BASIC",
+      "data_level": "AUCTION_CAMPAIGN",
+      "dimensions": ["campaign_id", "country_code", "stat_time_day"],
+      "metrics": ["spend"],
+      "primary_keys": ["campaign_id", "country_code", "stat_time_day"],
+      "replication_key": "stat_time_day"
+    }
+  ]
+}
+```
+
+Only `dimensions` and `metrics` are required for each report definition. Useful
+optional fields are `name`, `data_level`, `primary_keys`, and `replication_key`.
+
+Custom report notes:
+
+- `custom_basic_report` must be passed as an array of objects.
+- `data_level: AUCTION_CAMPAIGN` is the right choice when using `campaign_id`.
+- The tap currently forces custom basic reports to run with 1-day steps.
+- Multiple custom reports can be added by placing multiple objects in the array.
+
 
 A full list of supported settings and capabilities for this
 tap is available by running:
@@ -49,6 +96,12 @@ You can easily run `tap-tiktok` by itself or in a pipeline using [Meltano](https
 tap-tiktok --version
 tap-tiktok --help
 tap-tiktok --config CONFIG --discover > ./catalog.json
+```
+
+To debug with the local JSON config file:
+
+```bash
+tap-tiktok --config .secrets/config.json --discover
 ```
 
 ## Developer Resources
@@ -99,7 +152,7 @@ Now you can test and orchestrate using Meltano:
 # Test invocation:
 meltano invoke tap-tiktok --version
 # OR run a test `elt` pipeline:
-meltano elt tap-tiktok target-jsonl
+meltano run tap-tiktok target-jsonl
 ```
 
 ### SDK Dev Guide
