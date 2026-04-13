@@ -2,6 +2,7 @@
 import copy
 import json
 import datetime
+import re
 import dateutil
 import requests
 from typing import Any, Dict, Iterable, Optional
@@ -278,6 +279,145 @@ class AdsStream(TikTokStream):
 
 DATE_FORMAT = "%Y-%m-%d"
 STEP_NUM_DAYS = 30
+
+
+def _schema_property(name: str) -> th.Property:
+    if name in {"stat_time_day", "stat_time_hour"} or name.endswith("_time"):
+        return th.Property(name, th.DateTimeType)
+    if name.endswith("_id"):
+        return th.Property(name, th.StringType)
+    return th.Property(name, th.StringType)
+
+
+def _stream_name(name: str) -> str:
+    stream_name = re.sub(r"[^0-9a-zA-Z_]+", "_", name.strip().lower())
+    stream_name = re.sub(r"_+", "_", stream_name).strip("_")
+    if not stream_name:
+        raise ValueError("Custom report name must contain at least one letter or number.")
+    return stream_name
+
+
+class CustomBasicReportStream(TikTokReportsStream):
+    """Config-driven TikTok basic report stream."""
+
+    path = "/"
+
+    def __init__(self, tap, report_config: Dict[str, Any]):
+        self.report_config = report_config
+        self.name = _stream_name(report_config.get("name", "custom_basic_report"))
+        self.dimensions = report_config["dimensions"]
+        self.tiktok_metrics = report_config["metrics"]
+        self.service_type = report_config.get("service_type", "AUCTION")
+        self.report_type = "BASIC"
+        self.data_level = report_config.get("data_level")
+        self.status_field = report_config.get("status_field") or self._default_status_field()
+        primary_keys = report_config.get("primary_keys", self.dimensions)
+        replication_key = report_config.get("replication_key", self._default_replication_key())
+        self.step_num_days = 1
+
+        property_names = ["advertiser_id"] + self.dimensions + self.tiktok_metrics
+        properties = [_schema_property(name) for name in dict.fromkeys(property_names)]
+        schema = th.PropertiesList(*properties).to_dict()
+        schema["additionalProperties"] = True
+
+        super().__init__(tap=tap, name=self.name, schema=schema, path=self.path)
+        self.primary_keys = primary_keys
+        self.replication_key = replication_key
+
+    @property
+    def partitions(self):
+        return [{"advertiser_id": adv_id} for adv_id in self.config["advertiser_ids"]]
+
+    def _default_replication_key(self) -> Optional[str]:
+        if "stat_time_hour" in self.dimensions:
+            return "stat_time_hour"
+        if "stat_time_day" in self.dimensions:
+            return "stat_time_day"
+        return None
+
+    def _default_status_field(self) -> Optional[str]:
+        return {
+            "AUCTION_AD": "ad_status",
+            "AUCTION_ADGROUP": "adgroup_status",
+            "AUCTION_CAMPAIGN": "campaign_status",
+        }.get(self.data_level)
+
+    def _get_start_date(self, context: Optional[dict], next_page_token: Optional[Any]) -> datetime.datetime:
+        if isinstance(next_page_token, dict) and next_page_token.get("start_date") is not None:
+            return datetime.datetime.strptime(next_page_token["start_date"], DATE_FORMAT)
+
+        start_date = self.get_starting_timestamp(context) if self.replication_key else dateutil.parser.isoparse(self.config["start_date"])
+        lookback_window = self.config.get("lookback", 0)
+        if lookback_window > 0:
+            start_date = max(
+                min(start_date, datetime.datetime.now(tz=start_date.tzinfo) - datetime.timedelta(days=lookback_window)),
+                dateutil.parser.isoparse(self.config["start_date"]),
+            )
+        return start_date
+
+    def get_url_params(
+        self, context: Optional[dict], next_page_token: Optional[Any]
+    ) -> Dict[str, Any]:
+        start_date = self._get_start_date(context, next_page_token)
+        yesterday = datetime.datetime.now(tz=start_date.tzinfo) - datetime.timedelta(days=1)
+        end_date = min(start_date + datetime.timedelta(days=self.step_num_days), yesterday)
+
+        params: dict = {
+            "page_size": int(self.report_config.get("page_size", 1000)),
+            "advertiser_id": context["advertiser_id"],
+            "service_type": self.service_type,
+            "report_type": self.report_type,
+            "dimensions": json.dumps(self.dimensions),
+            "metrics": json.dumps(self.tiktok_metrics),
+            "start_date": start_date.strftime(DATE_FORMAT),
+            "end_date": end_date.strftime(DATE_FORMAT),
+        }
+        if self.data_level:
+            params["data_level"] = self.data_level
+        if self.report_config.get("filtering") is not None:
+            params["filtering"] = json.dumps(self.report_config["filtering"])
+        elif self.status_field and self.report_config.get("include_status_filter", True):
+            params["filtering"] = json.dumps([
+                {
+                    "field_name": self.status_field,
+                    "filter_type": "IN",
+                    "filter_value": json.dumps(["STATUS_ALL" if self.config.get("include_deleted") else "STATUS_NOT_DELETE"]),
+                }
+            ])
+        if next_page_token:
+            params["page"] = next_page_token["page"]
+        return params
+
+    @staticmethod
+    def _get_page_info(json_path, json):
+        page_matches = extract_jsonpath(json_path, json)
+        return next(iter(page_matches), None)
+
+    def get_next_page_token(
+        self, response: requests.Response, previous_token: Optional[Any]
+    ) -> Optional[Any]:
+        current_page = self._get_page_info("$.data.page_info.page", response.json()) or 0
+        total_pages = self._get_page_info("$.data.page_info.total_page", response.json()) or 0
+        start_date = datetime.datetime.strptime(parse_qs(urlparse(response.request.url).query)["start_date"][0], DATE_FORMAT)
+        yesterday = datetime.datetime.now(tz=start_date.tzinfo) - datetime.timedelta(days=1)
+        end_date = datetime.datetime.strptime(parse_qs(urlparse(response.request.url).query)["end_date"][0], DATE_FORMAT)
+        if current_page < total_pages:
+            return {
+                "page": current_page + 1,
+                "start_date": previous_token["start_date"] if previous_token else None,
+            }
+        if end_date.date() < yesterday.date():
+            return {
+                "page": 1,
+                "start_date": min(end_date + datetime.timedelta(days=1), yesterday).strftime(DATE_FORMAT),
+            }
+        return None
+
+    def post_process(self, row: dict, context: Optional[dict] = None) -> Optional[dict]:
+        record = super().post_process(row, context)
+        if context and "advertiser_id" not in record:
+            record["advertiser_id"] = context["advertiser_id"]
+        return record
 
 
 class AdsMetricsByDayStream(TikTokReportsStream):

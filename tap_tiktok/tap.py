@@ -27,6 +27,7 @@ from tap_tiktok.streams import (
     CampaignsPageEventMetricsByDayStream,
     CampaignsInAppEventMetricsByDayStream,
     CampaignsBasicDataMetricsByHourStream,
+    CustomBasicReportStream,
 )
 STREAM_TYPES = [
     AdAccountsStream,
@@ -86,9 +87,33 @@ class TapTikTok(Tap):
             th.IntegerType,
             default=0,
             description="The number of days of data to reload from the current date (ignored if current state of the extractor has a start date earlier than the current date minus number of lookback days)"
+        ),
+        th.Property(
+            "custom_basic_report",
+            th.ObjectType(
+                th.Property("name", th.StringType),
+                th.Property("service_type", th.StringType),
+                th.Property("report_type", th.StringType),
+                th.Property("data_level", th.StringType),
+                th.Property("dimensions", th.ArrayType(th.StringType), required=True),
+                th.Property("metrics", th.ArrayType(th.StringType), required=True),
+                th.Property("primary_keys", th.ArrayType(th.StringType)),
+                th.Property("replication_key", th.StringType),
+                th.Property("status_field", th.StringType),
+                th.Property("include_status_filter", th.BooleanType),
+                th.Property("step_num_days", th.IntegerType),
+                th.Property("page_size", th.IntegerType),
+                th.Property("filtering", th.ArrayType(th.ObjectType())),
+            ),
+            description="Single TikTok basic report definition for /report/integrated/get/."
         )
     ).to_dict()
 
     def discover_streams(self) -> List[Stream]:
         """Return a list of discovered streams."""
-        return [stream_class(tap=self) for stream_class in STREAM_TYPES]
+        streams = [stream_class(tap=self) for stream_class in STREAM_TYPES]
+
+        if self.config.get("custom_basic_report"):
+            streams.append(CustomBasicReportStream(tap=self, report_config=self.config["custom_basic_report"]))
+
+        return streams
