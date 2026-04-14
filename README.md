@@ -13,12 +13,6 @@ Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 This tap currently supports the core TikTok entity streams plus report streams, and
 it also supports config-driven custom basic reports through `custom_basic_report`.
 
-At the moment:
-
-- `custom_basic_report` is a list of report definitions, not a single object.
-- Each custom basic report becomes its own Singer stream.
-- Custom basic reports run in 1-day request windows.
-- `custom_reports` is not supported.
 
 ## Installation
 
