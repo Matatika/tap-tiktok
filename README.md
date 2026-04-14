@@ -1,6 +1,10 @@
 # tap-tiktok
 
-`tap-tiktok` is a Singer tap for TikTok.
+`tap-tiktok` is a Singer tap for TikTok Ads.
+
+It extracts advertiser, campaign, ad group, ad, and reporting data from the
+TikTok Marketing API so it can be loaded into a warehouse or downstream
+analytics system.
 
 Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
@@ -22,16 +26,37 @@ At the moment:
 pipx install git+https://github.com/gthsheep/tap-tiktok
 ```
 
+## Setup Guide
+
+1. Create a TikTok developer app with access to the TikTok Marketing API.
+2. Grant the app the scopes needed for account, campaign, ad group, ad, and
+   reporting access.
+3. Generate an `access_token` using the TikTok authentication flow.
+4. Identify the TikTok `advertiser_ids` you want the tap to sync.
+5. Create a JSON config file with the required settings.
+6. Run discovery first to confirm the connection and inspect the catalog.
+
+Example:
+
+```bash
+tap-tiktok --config .secrets/config.json --discover
+```
+
 ## Configuration
 
 ### Accepted Config Options
 
-- `access_token` - Access Token for the API as obtained via the authentication process described below.
-- `advertiser_ids` - Advertiser IDs for your TikTok accounts.
-- `start_date` - Start date as of when to start collecting metrics, e.g. `2022-01-01T00:00:00Z`.
-- `lookback` - Number of days prior to the current date for which data should be refetched (default `0`).
-- `include_deleted` - Include deleted-status entities when supported by the endpoint.
-- `custom_basic_report` - A list of TikTok Basic Report definitions to expose as streams.
+- `access_token` - Bearer token used to authenticate requests to the TikTok
+  Marketing API.
+- `advertiser_ids` - List of TikTok advertiser account IDs to sync.
+- `start_date` - Earliest timestamp to begin extracting time-based data, for
+  example `2022-01-01T00:00:00Z`.
+- `lookback` - Number of trailing days to refetch on each run to catch late
+  arriving changes. Default: `0`.
+- `include_deleted` - When `true`, includes deleted entities for endpoints that
+  support deleted-status records.
+- `custom_basic_report` - List of custom TikTok Basic Report definitions. Each
+  object creates its own Singer stream.
 
 Example custom Basic Report config:
 
@@ -73,6 +98,33 @@ tap is available by running:
 tap-tiktok --about
 ```
 
+### Setting Reference
+
+- `access_token`: Required. TikTok API access token for the authenticated app.
+- `advertiser_ids`: Required. One or more advertiser accounts to query.
+- `start_date`: Optional. Lower bound for incremental reporting syncs.
+- `lookback`: Optional. Re-sync window in days for recent data corrections.
+- `include_deleted`: Optional. Controls whether deleted entities are included
+  where the endpoint supports them.
+- `custom_basic_report`: Optional. Advanced configuration for additional report
+  streams built from TikTok's integrated reporting endpoint.
+
+`custom_basic_report` objects support these fields:
+
+- `name`: Stream name to expose in Singer.
+- `service_type`: TikTok service type, such as `AUCTION`.
+- `report_type`: TikTok report type, such as `BASIC`.
+- `data_level`: Reporting grain, such as campaign-level reporting.
+- `dimensions`: Required list of report dimensions.
+- `metrics`: Required list of report metrics.
+- `primary_keys`: Fields to use as the Singer primary key.
+- `replication_key`: Field to use for incremental replication.
+- `status_field`: Status column used when filtering deleted rows.
+- `include_status_filter`: Whether to apply status-based filtering.
+- `step_num_days`: Request window size in days.
+- `page_size`: Page size for report pagination.
+- `filtering`: Additional TikTok report filters.
+
 ### Source Authentication and Authorization
 
 To obtain an `access_token` you should follow the App creation steps described in the TikTok documentation,
@@ -85,6 +137,91 @@ Ad Account Management -> Read
 Ads Management -> Read ads/ adgroups/ campaigns
 Reporting -> All
 Tiktok Business -> All
+
+## Streams
+
+The tap exposes these built-in streams:
+
+- `ad_accounts`: Advertiser account metadata such as account name, status,
+  timezone, currency, and contact details.
+- `campaigns`: Campaign entities and campaign-level configuration details.
+- `ad_groups`: Ad group entities including targeting, bidding, budgeting, and
+  scheduling attributes.
+- `ads`: Individual ad entities and ad-level creative metadata.
+- `ads_attribute_metrics`: Daily ad-level attribute reporting.
+- `ads_basic_data_metrics_by_day`: Daily ad-level delivery and spend metrics.
+- `ads_basic_data_metrics_by_hour`: Hourly ad-level delivery and spend metrics.
+- `ads_video_play_metrics_by_day`: Daily ad-level video play metrics.
+- `ads_engagement_metrics_by_day`: Daily ad-level engagement metrics.
+- `ads_attribution_metrics_by_day`: Daily ad-level attributed conversion metrics.
+- `ads_page_event_metrics_by_day`: Daily ad-level page event metrics.
+- `ads_in_app_event_metrics_by_day`: Daily ad-level in-app event metrics.
+- `ad_group_basic_data_metrics_by_hour`: Hourly ad group-level delivery and
+  spend metrics.
+- `campaigns_attribute_metrics`: Daily campaign-level attribute reporting.
+- `campaigns_basic_data_metrics_by_day`: Daily campaign-level delivery and
+  spend metrics.
+- `campaigns_video_play_metrics_by_day`: Daily campaign-level video play
+  metrics.
+- `campaigns_engagement_metrics_by_day`: Daily campaign-level engagement
+  metrics.
+- `campaigns_attribution_metrics_by_day`: Daily campaign-level attributed
+  conversion metrics.
+- `campaigns_page_event_metrics_by_day`: Daily campaign-level page event
+  metrics.
+- `campaigns_in_app_event_metrics_by_day`: Daily campaign-level in-app event
+  metrics.
+- `campaigns_basic_data_metrics_by_hour`: Hourly campaign-level delivery and
+  spend metrics.
+- `custom_basic_report` streams: Optional user-defined reporting streams created
+  from each object in `custom_basic_report`.
+
+## Stream Fields
+
+The list below provides a practical summary of the main fields exposed by each
+stream family. For the complete schema for your configuration, run
+`tap-tiktok --config CONFIG --discover`.
+
+### Entity Streams
+
+- `ad_accounts`: `advertiser_id` (account ID), `name` (account name),
+  `company` (business name), `currency` (billing currency), `timezone`
+  (account timezone), `status` (account status).
+- `campaigns`: `campaign_id` (campaign ID), `campaign_name` (campaign name),
+  `advertiser_id` (parent advertiser), `objective` (campaign objective),
+  `budget` (configured budget), `status` (campaign status), `modify_time`
+  (last update timestamp).
+- `ad_groups`: `adgroup_id` (ad group ID), `campaign_id` (parent campaign),
+  `adgroup_name` (ad group name), `budget` (budget amount), `bid` (bid value),
+  `schedule_start_time` (start time), `schedule_end_time` (end time),
+  `modify_time` (last update timestamp).
+- `ads`: `ad_id` (ad ID), `adgroup_id` (parent ad group), `campaign_id`
+  (parent campaign), `ad_name` (ad name), `creative_type` (creative type),
+  `image_ids` and `video_id` (creative assets), `status` (ad status),
+  `modify_time` (last update timestamp).
+
+### Reporting Streams
+
+- Common identifier fields: `advertiser_id`, one of `campaign_id`,
+  `adgroup_id`, or `ad_id`, plus a time grain such as `stat_time_day` or
+  `stat_time_hour`.
+- Common delivery fields: `spend`, `impressions`, `clicks`, `cpc`, `cpm`,
+  `ctr`, `reach`.
+- Common video fields: video play counts, watch-through rates, and completion
+  metrics.
+- Common engagement fields: engagement actions such as likes, comments,
+  shares, and follows where available from TikTok reporting.
+- Common attribution and event fields: conversion counts, page events,
+  in-app events, and other attributed outcomes depending on the report stream.
+
+### Custom Basic Report Streams
+
+- Fields depend on the `dimensions` and `metrics` supplied in each
+  `custom_basic_report` object.
+- Typical dimensions include IDs and time grains such as `campaign_id`,
+  `adgroup_id`, `ad_id`, `country_code`, and `stat_time_day`.
+- Typical metrics include measures such as `spend`, `impressions`, `clicks`,
+  and conversion-related values.
 
 ## Usage
 
