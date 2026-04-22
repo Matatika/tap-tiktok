@@ -58,7 +58,7 @@ class TikTokStream(RESTStream):
 
 class TikTokReportsStream(TikTokStream):
 
-    url_base = "https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/"
+    path = "/report/integrated/get/"
 
     records_jsonpath = "$.data.list[*]"
     next_page_token_jsonpath = "$.page_info.page"
